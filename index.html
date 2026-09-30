@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice + Label PDF Merger</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #222;
+        }
+
+        .container {
+            max-width: 650px;
+            margin: 50px auto;
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.10);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .upload-box {
+            border: 2px dashed #bbb;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            background: #fafafa;
+        }
+
+        .upload-box h3 {
+            margin-top: 0;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+        }
+
+        .file-name {
+            margin-top: 10px;
+            color: #16803c;
+            font-size: 14px;
+        }
+
+        .sequence {
+            background: #eef5ff;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 17px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        #mergeBtn {
+            background: #1769ff;
+            color: white;
+        }
+
+        #mergeBtn:hover {
+            background: #0d55d8;
+        }
+
+        #downloadBtn {
+            background: #16803c;
+            color: white;
+            display: none;
+        }
+
+        #downloadBtn:hover {
+            background: #116b31;
+        }
+
+        #status {
+            text-align: center;
+            margin-top: 20px;
+            font-weight: bold;
+        }
+
+        .error {
+            color: #d93025;
+        }
+
+        .success {
+            color: #16803c;
+        }
+
+        .info {
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>📄 Invoice + Label Merger</h1>
+
+    <div class="subtitle">
+        Label aur Invoice ko alternate order me merge karein
+    </div>
+
+    <div class="upload-box">
+        <h3>🏷️ 1. Label PDF</h3>
+
+        <input 
+            type="file" 
+            id="labelFile" 
+            accept=".pdf,application/pdf"
+        >
+
+        <div id="labelName" class="file-name">
+            No file selected
+        </div>
+    </div>
+
+
+    <div class="upload-box">
+        <h3>📄 2. Invoice PDF</h3>
+
+        <input 
+            type="file" 
+            id="invoiceFile" 
+            accept=".pdf,application/pdf"
+        >
+
+        <div id="invoiceName" class="file-name">
+            No file selected
+        </div>
+    </div>
+
+
+    <div class="sequence">
+        Label 1 → Invoice 1 → Label 2 → Invoice 2 → Label 3 → Invoice 3 → ...
+    </div>
+
+
+    <button id="mergeBtn">
+        🔄 Merge PDF
+    </button>
+
+    <button id="downloadBtn">
+        📥 Download Merged PDF
+    </button>
+
+    <div id="status" class="info"></div>
+
+</div>
+
+
+<script>
+
+const labelInput = document.getElementById("labelFile");
+const invoiceInput = document.getElementById("invoiceFile");
+
+const labelName = document.getElementById("labelName");
+const invoiceName = document.getElementById("invoiceName");
+
+const mergeBtn = document.getElementById("mergeBtn");
+const downloadBtn = document.getElementById("downloadBtn");
+
+const status = document.getElementById("status");
+
+let mergedPdfBytes = null;
+
+
+// Show selected file names
+labelInput.addEventListener("change", function () {
+
+    if (this.files.length > 0) {
+        labelName.textContent = "Selected: " + this.files[0].name;
+    } else {
+        labelName.textContent = "No file selected";
+    }
+
+});
+
+
+invoiceInput.addEventListener("change", function () {
+
+    if (this.files.length > 0) {
+        invoiceName.textContent = "Selected: " + this.files[0].name;
+    } else {
+        invoiceName.textContent = "No file selected";
+    }
+
+});
+
+
+// Merge PDFs
+mergeBtn.addEventListener("click", async function () {
+
+    try {
+
+        status.className = "info";
+        status.textContent = "⏳ PDF merge ho raha hai...";
+
+        downloadBtn.style.display = "none";
+
+        const labelFile = labelInput.files[0];
+        const invoiceFile = invoiceInput.files[0];
+
+
+        // Check files
+        if (!labelFile || !invoiceFile) {
+
+            status.className = "error";
+            status.textContent = "❌ Please Label aur Invoice dono PDF select karein.";
+
+            return;
+        }
+
+
+        // Read files
+        const labelBytes = await labelFile.arrayBuffer();
+        const invoiceBytes = await invoiceFile.arrayBuffer();
+
+
+        // Load PDFs
+        const labelPdf = await PDFLib.PDFDocument.load(labelBytes);
+        const invoicePdf = await PDFLib.PDFDocument.load(invoiceBytes);
+
+
+        // Create new PDF
+        const mergedPdf = await PDFLib.PDFDocument.create();
+
+
+        const labelPageCount = labelPdf.getPageCount();
+        const invoicePageCount = invoicePdf.getPageCount();
+
+
+        const maxPages = Math.max(
+            labelPageCount,
+            invoicePageCount
+        );
+
+
+        // Alternate pages
+        for (let i = 0; i < maxPages; i++) {
+
+            // LABEL FIRST
+            if (i < labelPageCount) {
+
+                const [labelPage] = await mergedPdf.copyPages(
+                    labelPdf,
+                    [i]
+                );
+
+                mergedPdf.addPage(labelPage);
+            }
+
+
+            // INVOICE SECOND
+            if (i < invoicePageCount) {
+
+                const [invoicePage] = await mergedPdf.copyPages(
+                    invoicePdf,
+                    [i]
+                );
+
+                mergedPdf.addPage(invoicePage);
+            }
+
+        }
+
+
+        // Save merged PDF
+        mergedPdfBytes = await mergedPdf.save();
+
+
+        status.className = "success";
+
+        status.textContent =
+            `✅ Successfully merged! Total pages: ${mergedPdf.getPageCount()}`;
+
+
+        downloadBtn.style.display = "block";
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        status.className = "error";
+
+        status.textContent =
+            "❌ PDF merge nahi ho paya. Please check that both files are valid PDFs.";
+
+    }
+
+});
+
+
+// Download
+downloadBtn.addEventListener("click", function () {
+
+    if (!mergedPdfBytes) {
+        return;
+    }
+
+
+    const blob = new Blob(
+        [mergedPdfBytes],
+        { type: "application/pdf" }
+    );
+
+
+    const url = URL.createObjectURL(blob);
+
+
+    const a = document.createElement("a");
+
+    a.href = url;
+
+    a.download = "Merged_Labels_Invoices.pdf";
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    document.body.removeChild(a);
+
+
+    URL.revokeObjectURL(url);
+
+});
+
+</script>
+
+</body>
+</html>
